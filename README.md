@@ -21,8 +21,8 @@ Studenci rozwijaja projekt, podmieniajac dane przykladowe na wlasne i rozszerzaj
 ```
 Przegladarka
     |
-    +-- MapLibre JS (kafle MVT) --> tipg :8083 --> PostGIS
-    +-- MapLibre JS (kafle XYZ) --> TiTiler :8082 --> COG (URL)
+    +-- MapLibre JS (kafle MVT) --> tipg :8008 --> PostGIS
+    +-- MapLibre JS (kafle XYZ) --> TiTiler :7800 --> COG (URL)
     |
 Streamlit :8501
     |
@@ -45,33 +45,35 @@ cd python1-project
 # 2. Skopiuj plik konfiguracyjny
 cp .env.example .env
 
-# 3. Zbuduj i uruchom serwisy
+# 3. Zbuduj obrazy
 make build
-make up
 
-# 4. Poczekaj ~30 sekund, sprawdz status
-make ps
+# 4. Uruchom serwisy i zaladuj dane przykladowe
+make init
 
 # 5. Otworz aplikacje
 # Streamlit:  http://localhost:8501
 # FastAPI:    http://localhost:8000/docs
 # STAC API:   http://localhost:8080
-# TiTiler:    http://localhost:8082/docs
-# tipg:       http://localhost:8083
+# TiTiler:    http://localhost:7800/docs
+# tipg:       http://localhost:8008
 ```
 
-> **Uwaga:** Serwis `db-init` zaladuje dane przykladowe przy pierwszym uruchomieniu i zakonczy sie automatycznie (status `Exited 0`).
+> **Uwaga:** `make init` uruchamia serwisy i jednorazowo wykonuje skrypt `db-init`, ktory laduje dane przykladowe do bazy.
 
 ## Dostepne komendy Make
 
 ```bash
-make up        # Uruchom serwisy w tle
-make down      # Zatrzymaj serwisy
-make build     # Zbuduj obrazy Dockera
-make logs      # Sledz logi (Ctrl+C aby wyjsc)
-make ps        # Status serwisow
-make reset     # Zatrzymaj i usun dane (volumes) - UWAGA: kasuje baze
-make shell-db  # Otworz powloke psql
+make up               # Uruchom serwisy w tle
+make down             # Zatrzymaj serwisy
+make build            # Zbuduj obrazy Dockera
+make init             # Uruchom serwisy i zaladuj dane (pierwsze uruchomienie)
+make logs             # Sledz logi (Ctrl+C aby wyjsc)
+make ps               # Status serwisow
+make reset            # Zatrzymaj i usun dane (volumes) - UWAGA: kasuje baze
+make restart s=<serwis>  # Zrestartuj konkretny serwis (np. make restart s=frontend)
+make shell s=<serwis>    # Terminal w kontenerze (np. make shell s=backend)
+make shell-db         # Otworz powloke psql
 ```
 
 ## Struktura projektu
@@ -101,8 +103,7 @@ python1-project/
 |   |   |- models.py           # Modele danych (Pydantic)
 |   |   |- dependencies.py     # Dependency injection (get_db)
 |   |   +- routers/
-|   |       |- health.py       # GET /health
-|   |       +- locations.py    # CRUD dla lokalizacji
+|   |       +- locations.py    # Endpointy /locations/
 |   |- Dockerfile
 |   +- pyproject.toml
 |
@@ -139,8 +140,7 @@ Zmodyfikuj `scripts/ingest_data.py` - klasa `DataIngester`:
 
 Przeladuj dane:
 ```bash
-make reset   # usuwa baze
-make up      # uruchamia ponownie z nowa baza i odswiezonym db-init
+docker compose run --rm db-init
 ```
 
 ### 2. Dodaj nowy endpoint w FastAPI
@@ -149,8 +149,8 @@ Stwórz plik `backend/src/app/routers/moj_router.py`:
 
 ```python
 from fastapi import APIRouter, Depends
-from ..database import Database
-from ..dependencies import get_db
+from app.database import Database
+from app.dependencies import get_db
 
 router = APIRouter()
 
@@ -162,7 +162,7 @@ async def get_moje_dane(db: Database = Depends(get_db)) -> list:
 
 Zarejestruj router w `backend/src/app/main.py`:
 ```python
-from .routers import moj_router
+from app.routers import locations, moj_router
 app.include_router(moj_router.router, prefix="/moje-dane", tags=["moje-dane"])
 ```
 
@@ -197,11 +197,11 @@ Implementacja OGC STAC API 1.0. Endpointy:
 - `GET /collections/{id}/items` - lista itemow
 - `POST /search` - wyszukiwanie przestrzenne i temporalne
 
-### TiTiler (`:8082`)
+### TiTiler (`:7800`)
 Dynamiczny serwer kafli rastrowych dla plikow Cloud Optimized GeoTIFF (COG).
 Przyklady: `/cog/info?url=...`, `/cog/tiles/{z}/{x}/{y}?url=...`
 
-### tipg (`:8083`)
+### tipg (`:8008`)
 Serwer kafli wektorowych MVT bezposrednio z tabel PostGIS (schemat `app`).
 Endpointy OGC API Features + Tiles. Tabele sa odkrywane automatycznie.
 
@@ -216,7 +216,7 @@ Frontend z mapa MapLibre GL, przegladarka STAC i informacje o projekcie.
 Plik `.env` (skopiowany z `.env.example`):
 
 ```
-POSTGRES_USER=geoapp      # uzytkownik bazy danych
-POSTGRES_PASSWORD=geoapp  # haslo
-POSTGRES_DB=geoapp        # nazwa bazy
+POSTGRES_USER=postgres      # uzytkownik bazy danych
+POSTGRES_PASSWORD=postgres  # haslo
+POSTGRES_DB=geoapp          # nazwa bazy
 ```
